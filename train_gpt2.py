@@ -2,13 +2,10 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from dataclasses import dataclass
-import math
-import transformers
 import time
 from transformers import GPT2LMHeadModel
-import torch._dynamo
-torch._dynamo.config.suppress_errors = True
-
+import math
+import inspect
 
 @dataclass
 class GPTConfig:
@@ -116,6 +113,30 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             std = 0.02
             torch.nn.init.normal_(module.weight, mean=0.0, std=std)
+    
+    def configure_optimizer(self, weight_decay, learning_rate, device):
+        #Start with all the parameters that require gradients
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+
+        #Create optim groups, weight decay the parameter that have dim > 1, otherwise no weight decay
+        #All weigh tensors in matmul + embeddings decay, all biases and layernorms don't decay
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2 ]
+        nondecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_groups = [
+            {'params' : decay_params, 'weight_decay' : weight_decay},
+            {'params' : nondecay_params, 'weight_decay' : 0.0}
+        ]
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nondecay_params = sum(p.numel() for p in nondecay_params)
+        print(f"number of parameters: {num_decay_params} weight decay, {num_nondecay_params} no weight decay")  
+        print(f"number of parameters: {num_decay_params + num_nondecay_params} total")
+
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused_adam = fused_available and 'cuda' in device
+        print(f"using fused adam: {use_fused_adam}")
+        optimizer = torch.optim.AdamW(optim_groups, lr = learning_rate, betas = (0.9, 0.95), eps = 1e-8)
+        return optimizer
 
 
     def forward(self, idx, targets = None):
@@ -225,8 +246,7 @@ class DataLoaderLite():
             self.current = 0
 
         return x, y
-
-
+    
 device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
@@ -242,9 +262,31 @@ torch.set_float32_matmul_precision('high')
 model = GPT(GPTConfig(vocab_size=50304))
 model.to(device)
 
+max_lr = 6e-4
+min_lr = max_lr * 0.1
+warmup_steps = 10
+max_steps = 50
+def get_lr(it):
+    # 1) Linear warmup for warmup_steps
+    if it < warmup_steps:
+        return max_lr * (it+1)/ warmup_steps
+    
+    # 2) If it > lr_decay_iters, return min learning rate
+    if it > max_steps:
+        return min_lr
+    
+    # 3) In between, use cosine decay down to min learning rate
+    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    return min_lr + coeff * ( max_lr - min_lr)
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-for i in range(50):
+
+# optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps = 1e-8)
+
+optimizer = model.configure_optimizer(weight_decay = 0.1, learning_rate = 3e-4, device = device)
+
+for step in range(max_steps):   
     t0 = time.time()
     x, y = data.next_batch()
     x, y = x.to(device), y.to(device)
@@ -252,12 +294,19 @@ for i in range(50):
     with torch.autocast(device_type=device, dtype=torch.bfloat16):
         logits, loss = model(x, y)
     loss.backward()
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  
+
+    #Determine and set the learning rate for this iteration
+    lr = get_lr(step)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
     optimizer.step()
     torch.cuda.synchronize()
     t1 = time.time()
     dt = (t1-t0)*1000
     tokens_per_sec= (data.B * data.T) / (t1 -t0)
-    print(f"iteration {i}, loss: {loss.item()}, dt: {dt:.2f}ms, tokens_per_sec: {tokens_per_sec:.2f}t/s")
+    print(f"iteration {step:4d}, loss: {loss.item():.6f}, lr: {lr:.4e}, norm: {norm:.4f}, dt: {dt:.2f}ms, tokens/sec: {tokens_per_sec:.2f}t/s")
 
 
 
