@@ -4,7 +4,11 @@ from torch.nn import functional as F
 from dataclasses import dataclass
 import math
 import transformers
+import time
 from transformers import GPT2LMHeadModel
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 
 @dataclass
 class GPTConfig:
@@ -24,6 +28,7 @@ class CausalSelfAttention(nn.Module):
 
         #Output Projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+        self.c_proj.NANOGPT_SCALE_INIT = 1
 
         self.n_head = config.n_head
         self.n_embd = config.n_embd
@@ -42,10 +47,12 @@ class CausalSelfAttention(nn.Module):
         k = q.reshape(B, T, self.n_head, C // self.n_head).transpose(1,2)
         v = q.reshape(B, T, self.n_head, C // self.n_head).transpose(1,2)
       
-        attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        attn = attn.masked_fill(self.bias[:, :, T, T] == 0, float('inf'))
-        attn = F.softmax(attn, dim = 1)
-        y = attn @ v
+        # attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        # attn = attn.masked_fill(self.bias[:, :, T-1, T-1] == 0, float('inf'))
+        # attn = F.softmax(attn, dim = 1)
+        # y = attn @ v
+
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
 
         #Output projection
@@ -58,6 +65,8 @@ class MLP(nn.Module):
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
         self.gelu = nn.GELU(approximate='tanh')
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
+        self.c_proj.NANOGPT_SCALE_INIT = 1
+
     
     def forward(self, x):
         x = self.c_fc(x)
@@ -90,6 +99,24 @@ class GPT(nn.Module):
             ln_f = nn.LayerNorm(config.n_embd), 
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias = False) 
+
+        #Weight Sharing
+        self.transformer.wte.weight = self.lm_head.weight
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std  = 0.02
+            if hasattr(module, 'NANOGPT_SCALE_INIT'):
+                std *= (2 * self.config.n_layer) ** -0.5
+            torch.nn.init.normal_(module.weight, mean=0.0, std=std)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            std = 0.02
+            torch.nn.init.normal_(module.weight, mean=0.0, std=std)
+
 
     def forward(self, idx, targets = None):
         #idx is of the shape (B, T)
@@ -174,20 +201,21 @@ class DataLoaderLite():
     def __init__(self, B, T):
         self.B = B
         self.T = T
-        enc = tiktoken.get_encoding('gpt2')
+        
         with open('input.txt', 'r') as f:
             text = f.read()
+        enc = tiktoken.get_encoding('gpt2')
         tokens = enc.encode(text)
-        self.tokens = torch.tensor(tokens[:B*T + 1])
+        self.tokens = torch.tensor(tokens)
 
         print(f"tokens: {self.tokens.size()}")
-        print(f"1 epoch: {len(self.tokens) // B * T} batches")
+        print(f"1 epoch: {len(self.tokens) // (B * T)} batches")
 
         self.current = 0
     
     def next_batch(self):
         B, T = self.B, self.T
-        buf = self.tokens[self.current: self.current + B*T + 1]
+        buf = self.tokens[self.current : self.current + B*T + 1]
         x = buf[:-1].view(B, T)
         y = buf[1:].view(B, T)
 
@@ -199,30 +227,37 @@ class DataLoaderLite():
         return x, y
 
 
-
 device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
+    print(torch.cuda.get_device_name(device))
+    print("Compute Capability:", torch.cuda.get_device_capability(device))
+    print("Total SMs:", torch.cuda.get_device_properties(device).multi_processor_count)
 print(f"Using device: {device}")
+torch.manual_seed(1337)
 
-data = DataLoaderLite(B = 4, T= 32)
+data = DataLoaderLite(B = 2, T = 1024)
+torch.set_float32_matmul_precision('high')
 
-model = GPT(GPTConfig())
+model = GPT(GPTConfig(vocab_size=50304))
 model.to(device)
+
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
+    t0 = time.time()
     x, y = data.next_batch()
     x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    logits, loss = model(x, y)
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
-    print(f"iteration {i}, loss: {loss.item()}")
-
-
-import sys 
-sys.exit(0)
+    torch.cuda.synchronize()
+    t1 = time.time()
+    dt = (t1-t0)*1000
+    tokens_per_sec= (data.B * data.T) / (t1 -t0)
+    print(f"iteration {i}, loss: {loss.item()}, dt: {dt:.2f}ms, tokens_per_sec: {tokens_per_sec:.2f}t/s")
 
 
 
