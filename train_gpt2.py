@@ -256,7 +256,15 @@ if torch.cuda.is_available():
 print(f"Using device: {device}")
 torch.manual_seed(1337)
 
-data = DataLoaderLite(B = 2, T = 1024)
+#Gradient accumulation
+total_batch_size = 16384
+B = 2
+T = 1024
+assert total_batch_size % (B*T) == 0
+grad_accum_steps = total_batch_size // (B*T)
+print(f"gradient accumulation: {grad_accum_steps}")
+
+data = DataLoaderLite(B = B, T = T)
 torch.set_float32_matmul_precision('high')
 
 model = GPT(GPTConfig(vocab_size=50304))
@@ -288,12 +296,18 @@ optimizer = model.configure_optimizer(weight_decay = 0.1, learning_rate = 3e-4, 
 
 for step in range(max_steps):   
     t0 = time.time()
-    x, y = data.next_batch()
-    x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    with torch.autocast(device_type=device, dtype=torch.bfloat16):
-        logits, loss = model(x, y)
-    loss.backward()
+    loss_accum = 0.0
+
+    for micro_step in range(grad_accum_steps):
+        x, y = data.next_batch()
+        x, y = x.to(device), y.to(device)
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            logits, loss = model(x, y)
+        loss = loss/grad_accum_steps
+        loss_accum += loss.detach()
+        loss.backward()
+
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  
 
     #Determine and set the learning rate for this iteration
@@ -305,8 +319,8 @@ for step in range(max_steps):
     torch.cuda.synchronize()
     t1 = time.time()
     dt = (t1-t0)*1000
-    tokens_per_sec= (data.B * data.T) / (t1 -t0)
-    print(f"iteration {step:4d}, loss: {loss.item():.6f}, lr: {lr:.4e}, norm: {norm:.4f}, dt: {dt:.2f}ms, tokens/sec: {tokens_per_sec:.2f}t/s")
+    tokens_per_sec= (data.B * data.T) / (t1 -t0) * grad_accum_steps
+    print(f"iteration {step:4d}, loss: {loss_accum.item():.6f}, lr: {lr:.4e}, norm: {norm:.4f}, dt: {dt:.2f}ms, tokens/sec: {tokens_per_sec:.2f}t/s")
 
 
 
