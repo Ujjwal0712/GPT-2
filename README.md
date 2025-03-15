@@ -1,25 +1,39 @@
-Overview
+GPT-2 From Scratch: Efficient and Scalable Implementation 🚀
 
-The project implements a GPT-2 model, a transformer-based language model, from the ground up. The implementation focuses on optimizing training efficiency and memory usage while maintaining model performance. Key techniques used include:
+Welcome to the GPT-2 From Scratch project! This repository contains a ground-up implementation of the GPT-2 model, a transformer-based language model, with a focus on optimizing training efficiency and memory usage while maintaining high performance.
 
-- MatMul Precision: Utilizes mixed-precision matrix multiplication for faster computation and reduced memory usage.
-- bfloat16: Employs the bfloat16 data type for training, which balances precision and range, enabling efficient training on hardware like TPUs and GPUs.
-- Flash Attention: Integrates the Flash Attention mechanism to optimize the self-attention computation, reducing memory footprint and improving speed.
-- Gradient Accumulation: Implements gradient accumulation to simulate larger batch sizes without increasing memory usage.
+🚀 Key Features
 
-Features
-- From-Scratch Implementation: The GPT-2 model is built without relying on high-level libraries like Hugging Face or PyTorch's built-in transformer modules.
-- Efficient Training: Techniques like bfloat16, Flash Attention, and gradient accumulation ensure efficient training on limited hardware resources.
-- Scalable: Designed to scale to larger datasets and model sizes with minimal modifications.
-- Customizable: Easy to modify and extend for specific use cases or research experiments.
+✅ Model Implementation
 
-Dataset
-The model is trained on the Cosmopedia-100k dataset, a high-quality, diverse dataset containing 100,000 text samples. The dataset is designed to provide a broad range of linguistic patterns and knowledge, making it ideal for training general-purpose language models.
+From-Scratch Implementation: Built without relying on high-level libraries like Hugging Face or PyTorch's built-in transformer modules.
 
-The data processing pipeline downloads the Cosmopedia-100k dataset, tokenizes it using the GPT-2 tokenizer, and saves the tokenized data into shards for efficient training. Each shard contains 1 million tokens, and the pipeline uses multiprocessing to speed up tokenization.
+Efficient Training: Leverages advanced techniques to ensure efficient training on limited hardware resources:
 
-Key Features of the Data Processing Script
-- Tokenization: Uses the GPT-2 tokenizer from the tiktoken library.
-- Sharding: Splits the dataset into shards of 100 million tokens each.
-- Multiprocessing: Utilizes multiple CPU cores for parallel tokenization.
-- Efficient Storage: Saves tokenized data as .npy files for fast loading during training.
+Mixed-Precision MatMul: Uses mixed-precision matrix multiplication for faster computation and reduced memory usage.
+
+bfloat16: Balances precision and range for efficient training on TPUs and GPUs.
+
+Flash Attention: Optimizes self-attention computation, reducing memory footprint and improving speed.
+
+Gradient Accumulation: Simulates larger batch sizes without increasing memory usage.
+
+Scalable: Designed to scale to larger datasets and model sizes with minimal modifications.
+
+Customizable: Easy to modify and extend for specific use cases or research experiments.
+
+📂 Dataset: Cosmopedia-100k
+
+The model is trained on Cosmopedia-100k, a high-quality, diverse dataset containing 100,000 text samples. This dataset provides a broad range of linguistic patterns and knowledge, making it ideal for training general-purpose language models.
+
+🔧 Data Processing Pipeline
+
+The data processing pipeline is optimized for efficiency and speed. Here's how it works:
+
+Tokenization: Uses the GPT-2 tokenizer from the tiktoken library.
+
+Sharding: Splits the dataset into shards of 100 million tokens each for efficient handling.
+
+Multiprocessing: Utilizes multiple CPU cores for parallel tokenization, significantly speeding up the process.
+
+Efficient Storage: Saves tokenized data as .npy files for fast loading during training.
