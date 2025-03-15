@@ -12,3 +12,14 @@ Features
 - Efficient Training: Techniques like bfloat16, Flash Attention, and gradient accumulation ensure efficient training on limited hardware resources.
 - Scalable: Designed to scale to larger datasets and model sizes with minimal modifications.
 - Customizable: Easy to modify and extend for specific use cases or research experiments.
+
+Dataset
+The model is trained on the Cosmopedia-100k dataset, a high-quality, diverse dataset containing 100,000 text samples. The dataset is designed to provide a broad range of linguistic patterns and knowledge, making it ideal for training general-purpose language models.
+
+The data processing pipeline downloads the Cosmopedia-100k dataset, tokenizes it using the GPT-2 tokenizer, and saves the tokenized data into shards for efficient training. Each shard contains 1 million tokens, and the pipeline uses multiprocessing to speed up tokenization.
+
+Key Features of the Data Processing Script
+- Tokenization: Uses the GPT-2 tokenizer from the tiktoken library.
+- Sharding: Splits the dataset into shards of 100 million tokens each.
+- Multiprocessing: Utilizes multiple CPU cores for parallel tokenization.
+- Efficient Storage: Saves tokenized data as .npy files for fast loading during training.
