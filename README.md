@@ -6,21 +6,21 @@ Welcome to the GPT-2 From Scratch project! This repository contains a ground-up 
 
 ✅ Model Implementation
 
--From-Scratch Implementation: Built without relying on high-level libraries like Hugging Face or PyTorch's built-in transformer modules.
+- From-Scratch Implementation: Built without relying on high-level libraries like Hugging Face or PyTorch's built-in transformer modules.
 
--Efficient Training: Leverages advanced techniques to ensure efficient training on limited hardware resources:
+- Efficient Training: Leverages advanced techniques to ensure efficient training on limited hardware resources:
 
--Mixed-Precision MatMul: Uses mixed-precision matrix multiplication for faster computation and reduced memory usage.
+- Mixed-Precision MatMul: Uses mixed-precision matrix multiplication for faster computation and reduced memory usage.
  
--bfloat16: Balances precision and range for efficient training on TPUs and GPUs.
+- bfloat16: Balances precision and range for efficient training on TPUs and GPUs.
 
--Flash Attention: Optimizes self-attention computation, reducing memory footprint and improving speed.
+- Flash Attention: Optimizes self-attention computation, reducing memory footprint and improving speed.
 
--Gradient Accumulation: Simulates larger batch sizes without increasing memory usage.
+- Gradient Accumulation: Simulates larger batch sizes without increasing memory usage.
 
--Scalable: Designed to scale to larger datasets and model sizes with minimal modifications.
+- Scalable: Designed to scale to larger datasets and model sizes with minimal modifications.
 
--Customizable: Easy to modify and extend for specific use cases or research experiments.
+- Customizable: Easy to modify and extend for specific use cases or research experiments.
 
 📂 Dataset: Cosmopedia-100k
 
@@ -30,10 +30,10 @@ The model is trained on Cosmopedia-100k, a high-quality, diverse dataset contain
 
 The data processing pipeline is optimized for efficiency and speed. Here's how it works:
 
--Tokenization: Uses the GPT-2 tokenizer from the tiktoken library.
+- Tokenization: Uses the GPT-2 tokenizer from the tiktoken library.
 
--Sharding: Splits the dataset into shards of 1 million tokens each for efficient handling.
+- Sharding: Splits the dataset into shards of 1 million tokens each for efficient handling.
 
--Multiprocessing: Utilizes multiple CPU cores for parallel tokenization, significantly speeding up the process.
+- Multiprocessing: Utilizes multiple CPU cores for parallel tokenization, significantly speeding up the process.
 
--Efficient Storage: Saves tokenized data as .npy files for fast loading during training.
+- Efficient Storage: Saves tokenized data as .npy files for fast loading during training.
